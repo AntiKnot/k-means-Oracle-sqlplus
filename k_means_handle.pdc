@@ -1,0 +1,5 @@
+@c:\k_means\create_t_data.sql
+@c:\k_means\create_t_result.sql
+@c:\k_means\insert_random.sql
+@c:\k_means\create_t_point.sql
+@c:\k_means\k_means.sql

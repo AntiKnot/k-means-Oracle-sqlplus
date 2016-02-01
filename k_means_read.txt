@@ -1,0 +1,123 @@
+--create_t_data
+--创建数据表 数据表[数值，类别]
+create table data(
+numerical number(10),
+k_class integer)
+/
+--insert_random
+--随机生成50个数据到data表中--产生的随机数为0~100的整数
+declare var_random number; --声明变量v_random 类型number
+begin
+for i in 1 .. 50 loop --循环1:循环次数50--控制生成个数
+select trunc(dbms_random.value(0,100)) into var_random from dual; --trunc取整 values（0,100）控制生成数大小范文
+insert into data(numerical) values(var_random); --将每次生成的随机数操作insert表data中
+end loop; --结束循环1
+end;
+/
+
+create table point
+as
+select * from (select * from data order by dbms_random.random)
+/
+
+--k_means
+declare --声明
+v_cnt_k number; --传递参数
+v_cnt_kk number; --参数控制
+v_count number:=0; 
+v_cnt_data number; --data表中数据的行数 用于控制循环次数
+v_cnt_point number; --point表中数据的行数 用于控制循环次数
+change number:=1; --迭代控制变量 用于控制迭代终止
+distance number; --k_mesns算法 计算数值变量:一维数据距离
+temp number; --临时变量 用于算法中临时存放过程变量
+--cursor cur_data is select numerical k_class from data; 
+TYPE t_data is table of data%ROWTYPE INDEX BY BINARY_INTEGER; --定义一维变长数组类型1与data相同采用rowtype 按照BINARY_INTEGER排序
+v_arry_data t_data; --声明类型数据的数组
+TYPE t_point IS TABLE OF point%ROWTYPE INDEX BY BINARY_INTEGER; --定义一维变长数组类型2与point相同采用rowype 按照BINARY_INTEGER排序
+v_arry_point t_point;--声明类型中心点的数组
+v_sum number:=0; --k_means算法 计算数值变量:同类型数据数值合
+v_cnt number:=0; --k_means算法 计算数值变量:同类型数据个数
+v_average number; --k_means算法 计算数值变量:同类型数据数值平均值==新的中心
+BEGIN --开始
+v_cnt_k:=&1; --接收参数
+v_cnt_kk:=v_cnt_k + 1; --用于控制从随机数表中抽取的中心点个数
+SELECT * BULK COLLECT INTO v_arry_data FROM  data;
+v_cnt_data:=v_arry_data.count; --赋值:将数组v_arry_data的行数赋值给变量v_cnt_data
+if v_cnt_k<1 then --如果中心点个数小于1
+change:=0; --循环迭代控制符置0 不进行运算
+dbms_output.put_line('error: The number of point should more than 1'); --输出错误提示error:
+end if;
+if v_cnt_k>v_cnt_data then --如果中心点个数超过数据量
+change:=0;
+dbms_output.put_line('error: The number of point shoule less than data'); --输入错误提示error:
+end if;
+if v_cnt_k>0 and v_cnt_k<v_cnt_data then --中心点数目验证通过
+--从data表中随机选取k个数值为中心点
+--point表为data表乱序生成,前四个数据可以看做随机选取
+SELECT * BULK COLLECT INTO v_arry_point FROM point where rownum<v_cnt_kk; --将point中数据存k个放入数组v_arry_point中
+v_cnt_point:=v_arry_point.count; --赋值:将数组v_arrt_point的行数赋值给变量v_cnt_point
+end if;
+/*外层迭代循环0 对v_arry_data(i).k_class 对所有中心点查看并修改为一次完整循环循环条件为change=1*/
+WHILE change=1 loop  --当change值为1时执行循环
+/*中心点数据更迭情况展示*/
+for i in 1..v_cnt_point loop --循环次数为中心点个数
+	dbms_output.put_line(v_arry_point(i).numerical||':'||v_arry_point(i).k_class); --输出中心点 "数值:类别"
+end loop; --结束循环
+for i in 1..v_cnt_data loop --循环次数为数据个数
+	dbms_output.put_line(v_arry_data(i).numerical||':'||v_arry_data(i).k_class); --输出数据 "数值:类别"
+end loop; --结束循环
+change:=0; --将外层迭代循环0控制变量置0
+/*从data表中复制生成的point表中同样没有类别数值 需要赋值 因为只是简单的一维聚类 类别可用整数序列表示
+因为类别只是标志 本身数值并没有意义 只要不相同的数值符号等 均可*/
+for i in 1..v_cnt_point loop --循环次数 中心点个数
+	v_arry_point(i).k_class:=i; --将循环次数 1 2 3 4...赋值给分别赋值给中心点的k_class类别值
+end loop; --结束循环
+/*核心运算
+将data数组中每一个数值分别与point数组中每一个数值进行差值运算
+并将结果abs转化为绝对值 即为数值间距离大小
+每获取一个data数组中数值 
+将此数值k_class属性临时设为1 若不在下列计算中修改则保留
+临时的数值间距离设置为与类型1间距离
+在分别于point中数值据算距离的过程中
+若发现距离更小的中心点，将新中心点的类别数值赋值给数据表中数值的类别
+*/
+for j in 1..v_cnt_data loop --循环次数 数据数组中数值个数
+	v_arry_data(j).k_class:=1; --将提取数据的k_class值临时设置为1
+	temp:=v_arry_data(j).numerical - v_arry_point(1).numerical; --计算数据间差值
+	select abs(temp) into temp from dual; --将差值转化为绝对值 距离
+	for i in 1..v_cnt_point loop --循环次数 中心点中数值个数
+		distance:=v_arry_data(j).numerical - v_arry_point(i).numerical; --计算距离
+		select abs(distance) into distance from dual; --转化为绝对值 距离
+		if distance<temp then  --捕捉更小的距离
+			temp:=distance; --更新临时距离为当前最小距离
+			v_arry_data(j).k_class:=v_arry_point(i).k_class; --更新数据数组类别为具有当前与中心点最小距离的类别
+			end if; --结束捕捉
+		end loop; --循环结束
+end loop; --结束数据数组 更新类别循环
+/*根据更新后的数据数组内容 更新 重新计算中心点数组中的数值 保留类别*/
+for i in 1..v_cnt_point loop --循环次数 中心点个数
+	for j in 1..v_cnt_data loop --循环次数 数据个数
+		if v_arry_data(j).k_class=i then --捕捉相同类型数据
+			v_sum:=v_sum + v_arry_data(j).numerical; --计算相同类型数据合
+			v_cnt:=v_cnt+1; --统计相同类型数据个数
+		end if; --结束捕捉
+	end loop; --结束循环
+	v_average:=v_sum/v_cnt; --计算同类型数据平均值
+	begin --开始
+	select ceil(v_average) into v_average from dual; --将获取的平均值向上取整
+	end;--结束
+	if 	v_arry_point(i).numerical<>v_average then --若中心点数组当前数值与获取的平均值不通
+		v_arry_point(i).numerical:=v_average; --更新中心点数组数值为新的平均值
+		change:=1; --记录更改 将控制变量置1
+	end if; --结束判断
+	v_sum:=0; --临时变量清零
+	v_cnt:=0; --临时变量清零
+end loop; --结束中心点数组 更新数值循环
+end loop; --结束外层迭代过程
+end; --结束
+/
+
+@c:\k_means\create_t_data.sql
+@c:\k_means\insert_random.sql
+@c:\k_means\create_t_point.sql
+@c:\k_means\k_means.sql
